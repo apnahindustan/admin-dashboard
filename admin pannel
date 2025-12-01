@@ -1,0 +1,270 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Scrims Admin Panel (Updated)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{background:#0f0f0f;color:#eee;font-family:Inter,Arial;padding:18px;}
+    h1{margin:0 0 14px 0;font-size:22px;}
+    .top{display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+    input[type="text"]{padding:8px;border-radius:6px;border:1px solid #333;background:#111;color:#fff;}
+    button{padding:8px 10px;border-radius:6px;border:none;background:#ffb84d;color:#111;cursor:pointer;}
+    .container{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;}
+    .card{background:#121212;padding:12px;border-radius:8px;border:1px solid #222;}
+    .team-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+    .team-name{font-weight:700;font-size:16px;flex:1;}
+    .small{font-size:13px;color:#bbb;}
+    .num-input{width:72px;padding:6px;border-radius:6px;background:#0e0e0e;border:1px solid #2c2c2c;color:#fff;text-align:center;}
+    .btn-mini{padding:6px 8px;border-radius:6px;border:none;background:#2b2b2b;color:#fff;cursor:pointer;}
+    .danger{background:#ff5c5c;color:#111;}
+    .muted{color:#999;font-size:13px;margin-top:6px;}
+    .edit-name{padding:6px;border-radius:6px;background:#0e0e0e;border:1px solid #2c2c2c;color:#fff;width:180px;}
+    .row-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  </style>
+</head>
+<body>
+  <h1>Scrims Admin Panel</h1>
+
+  <div class="top">
+    <input id="newTeamName" type="text" placeholder="Enter new team name (eg. TEAM ABC)" />
+    <button id="addBtn">Add Team</button>
+    <button id="resetBtn" style="background:#444;color:#fff;">Reset to default teams</button>
+    <button id="clearAll" style="background:#b33;color:#fff;">Clear All</button>
+  </div>
+
+  <div id="teamsContainer" class="container"></div>
+
+  <p class="muted">Tip: Use + / - to change kills or alive. Use Add Team to add custom teams. All changes save automatically to Firebase.</p>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import {
+    getDatabase, ref, push, set, onValue, update, remove, get
+  } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+  // ---------- FIREBASE CONFIG ----------
+  const firebaseConfig = {
+    apiKey: "AIzaSyAM_vLckdeuYKPHouscSPA_CxE8WlZQbuw",
+    authDomain: "scoreboard-c69c6.firebaseapp.com",
+    databaseURL: "https://scoreboard-c69c6-default-rtdb.firebaseio.com",
+    projectId: "scoreboard-c69c6",
+    storageBucket: "scoreboard-c69c6.firebasestorage.app",
+    messagingSenderId: "727943688192",
+    appId: "1:727943688192:web:077ba0b416957122b968e5"
+  };
+  // -------------------------------------
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const teamsRef = ref(db, "scrims/teams");
+
+  // default teams (used only if DB empty or when user resets)
+  const DEFAULT_TEAMS = [
+    "TEAM GODL","TEAM HH","TEAM RGE","TEAM MNZ","TEAM TF",
+    "TEAM NXT","TEAM TG","TEAM NMR","TEAM ABZ","TEAM ARROW",
+    "TEAM ASIN","TEAM SOUL"
+  ];
+
+  const teamsContainer = document.getElementById("teamsContainer");
+  const addBtn = document.getElementById("addBtn");
+  const newTeamName = document.getElementById("newTeamName");
+  const clearAllBtn = document.getElementById("clearAll");
+  const resetBtn = document.getElementById("resetBtn");
+
+  // Add new team (push as new node)
+  addBtn.addEventListener("click", async () => {
+    const name = newTeamName.value.trim();
+    if(!name) return alert("Enter team name");
+    try{
+      const newRef = push(teamsRef);
+      await set(newRef, { name: name, kills: 0, alive: 4 });
+      newTeamName.value = "";
+    }catch(e){
+      alert("Error: " + e.message);
+    }
+  });
+
+  // Clear all teams
+  clearAllBtn.addEventListener("click", async () => {
+    if(!confirm("Delete ALL teams and scores?")) return;
+    try{
+      await set(teamsRef, null);
+      alert("All teams cleared.");
+    }catch(e){ alert(e.message); }
+  });
+
+  // Reset to default teams (overwrites)
+  resetBtn.addEventListener("click", async () => {
+    if(!confirm("Reset database to default teams? This will overwrite existing teams.")) return;
+    try{
+      // create object with push-like keys (we'll use push for simplicity)
+      // first clear
+      await set(teamsRef, null);
+      for(const t of DEFAULT_TEAMS){
+        const r = push(teamsRef);
+        await set(r, { name: t, kills: 0, alive: 4 });
+      }
+      alert("Reset done.");
+    }catch(e){ alert(e.message); }
+  });
+
+  // Listen realtime to teams node
+  onValue(teamsRef, (snapshot) => {
+    const data = snapshot.val();
+    renderTeams(data);
+  }, (err)=> {
+    console.error("Firebase onValue error:", err);
+  });
+
+  // On first load if DB empty, populate defaults
+  (async function ensureInit(){
+    try{
+      const snap = await get(teamsRef);
+      if(!snap.exists()){
+        // populate defaults
+        for(const t of DEFAULT_TEAMS){
+          const r = push(teamsRef);
+          await set(r, { name: t, kills: 0, alive: 4 });
+        }
+      }
+    }catch(e){ console.error(e); }
+  })();
+
+  // Render UI
+  function renderTeams(data){
+    teamsContainer.innerHTML = "";
+    if(!data){
+      teamsContainer.innerHTML = `<div style="color:#999">No teams yet. Add teams above.</div>`;
+      return;
+    }
+
+    // convert to array of {key, ...}
+    const arr = Object.keys(data).map(k => ({ key: k, ...data[k] }));
+    // sort by kills desc
+    arr.sort((a,b)=> (Number(b.kills||0) - Number(a.kills||0)));
+
+    arr.forEach(team => {
+      const card = document.createElement("div");
+      card.className = "card";
+
+      // build inner HTML
+      card.innerHTML = `
+        <div class="row-top">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div class="team-name" id="displayName_${team.key}">${escapeHtml(team.name || "")}</div>
+            <input id="editName_${team.key}" class="edit-name" style="display:none" />
+          </div>
+          <div>
+            <button class="btn-mini" id="editBtn_${team.key}">Edit</button>
+            <button class="btn-mini danger" id="delBtn_${team.key}">Delete</button>
+          </div>
+        </div>
+
+        <div style="margin-top:6px;">
+          <div class="team-row">
+            <div class="small">Kills</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button class="btn-mini" id="kill_minus_${team.key}">-</button>
+              <input id="kill_input_${team.key}" class="num-input" type="number" value="${team.kills||0}" min="0" />
+              <button class="btn-mini" id="kill_plus_${team.key}">+</button>
+            </div>
+          </div>
+
+          <div class="team-row">
+            <div class="small">Alive</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button class="btn-mini" id="alive_minus_${team.key}">-</button>
+              <input id="alive_input_${team.key}" class="num-input" type="number" value="${team.alive||0}" min="0" max="4" />
+              <button class="btn-mini" id="alive_plus_${team.key}">+</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      teamsContainer.appendChild(card);
+
+      // wire events
+      document.getElementById(`kill_plus_${team.key}`).addEventListener("click", ()=> changeValue(team.key, 'kills', 1));
+      document.getElementById(`kill_minus_${team.key}`).addEventListener("click", ()=> changeValue(team.key, 'kills', -1));
+      document.getElementById(`alive_plus_${team.key}`).addEventListener("click", ()=> changeValue(team.key, 'alive', 1, 0, 4));
+      document.getElementById(`alive_minus_${team.key}`).addEventListener("click", ()=> changeValue(team.key, 'alive', -1, 0, 4));
+
+      // manual input change (debounced by small timeout to avoid rapid writes)
+      attachInputHandler(`kill_input_${team.key}`, value => {
+        const v = Math.max(0, Number(value)||0);
+        update(ref(db, `scrims/teams/${team.key}`), { kills: v });
+      });
+
+      attachInputHandler(`alive_input_${team.key}`, value => {
+        let v = Math.max(0, Math.min(4, Number(value)||0));
+        update(ref(db, `scrims/teams/${team.key}`), { alive: v });
+      });
+
+      // edit name toggle
+      const editBtn = document.getElementById(`editBtn_${team.key}`);
+      const delBtn = document.getElementById(`delBtn_${team.key}`);
+      const nameDiv = document.getElementById(`displayName_${team.key}`);
+      const editInput = document.getElementById(`editName_${team.key}`);
+
+      editBtn.addEventListener("click", async ()=>{
+        if(editInput.style.display === "none" || editInput.style.display === ""){
+          editInput.style.display = "inline-block";
+          editInput.value = team.name || "";
+          editInput.focus();
+          editBtn.textContent = "Save";
+          nameDiv.style.display = "none";
+        } else {
+          const newName = (editInput.value || "").trim() || "TEAM";
+          await update(ref(db, `scrims/teams/${team.key}`), { name: newName });
+          editInput.style.display = "none";
+          editBtn.textContent = "Edit";
+          nameDiv.style.display = "block";
+        }
+      });
+
+      delBtn.addEventListener("click", async ()=>{
+        if(!confirm("Delete team " + (team.name||"") + " ?")) return;
+        try{
+          await remove(ref(db, `scrims/teams/${team.key}`));
+        }catch(e){
+          alert("Delete failed: "+e.message);
+        }
+      });
+
+    });
+  }
+
+  // safe input attach with small debounce (300ms)
+  function attachInputHandler(elementId, callback){
+    const el = document.getElementById(elementId);
+    if(!el) return;
+    let timer = null;
+    el.addEventListener("input", (e)=>{
+      clearTimeout(timer);
+      timer = setTimeout(()=> callback(e.target.value), 300);
+    });
+  }
+
+  // change numeric value by delta
+  async function changeValue(key, field, delta, min = 0, max = 9999){
+    const nodeRef = ref(db, `scrims/teams/${key}`);
+    try{
+      const snap = await get(nodeRef);
+      const cur = Number(snap.val() && snap.val()[field] ? snap.val()[field] : 0);
+      let nv = cur + delta;
+      if(nv < min) nv = min;
+      if(nv > max) nv = max;
+      await update(nodeRef, { [field]: nv });
+    }catch(e){ console.error(e); }
+  }
+
+  function escapeHtml(s){
+    return String(s || "").replace(/[&<>"']/g, function(m){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]);
+    });
+  }
+
+</script>
+</body>
+</html>
