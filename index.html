@@ -142,7 +142,7 @@
     // convert to array of {key, ...}
     const arr = Object.keys(data).map(k => ({ key: k, ...data[k] }));
     // sort by kills desc
-    arr.sort((a,b)=> (Number(b.kills||0) - Number(a.kills||0)));
+    //arr.sort((a,b)=> (Number(b.kills||0) - Number(a.kills||0)));
 
     arr.forEach(team => {
       const card = document.createElement("div");
