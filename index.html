@@ -21,6 +21,17 @@
     .muted{color:#999;font-size:13px;margin-top:6px;}
     .edit-name{padding:6px;border-radius:6px;background:#0e0e0e;border:1px solid #2c2c2c;color:#fff;width:180px;}
     .row-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+
+    /* ✅ नया SLOT badge */
+    .slot-badge{
+      font-size:12px;
+      padding:3px 8px;
+      border-radius:999px;
+      background:#1a1a1a;
+      border:1px solid #333;
+      color:#ffb84d;
+      font-weight:600;
+    }
   </style>
 </head>
 <body>
@@ -98,8 +109,6 @@
   resetBtn.addEventListener("click", async () => {
     if(!confirm("Reset database to default teams? This will overwrite existing teams.")) return;
     try{
-      // create object with push-like keys (we'll use push for simplicity)
-      // first clear
       await set(teamsRef, null);
       for(const t of DEFAULT_TEAMS){
         const r = push(teamsRef);
@@ -122,7 +131,6 @@
     try{
       const snap = await get(teamsRef);
       if(!snap.exists()){
-        // populate defaults
         for(const t of DEFAULT_TEAMS){
           const r = push(teamsRef);
           await set(r, { name: t, kills: 0, alive: 4 });
@@ -141,17 +149,19 @@
 
     // convert to array of {key, ...}
     const arr = Object.keys(data).map(k => ({ key: k, ...data[k] }));
-    // sort by kills desc
-    //arr.sort((a,b)=> (Number(b.kills||0) - Number(a.kills||0)));
+    // NOTE: अगर आप kills के हिसाब से sort करना चाहें तो नीचे वाली line को uncomment कर सकते हैं
+    // arr.sort((a,b)=> (Number(b.kills||0) - Number(a.kills||0)));
 
-    arr.forEach(team => {
+    arr.forEach((team, index) => {
+      const slotNo = index + 1;   // ✅ SLOT नंबर 1,2,3,...
+
       const card = document.createElement("div");
       card.className = "card";
 
-      // build inner HTML
       card.innerHTML = `
         <div class="row-top">
           <div style="display:flex;gap:8px;align-items:center;">
+            <span class="slot-badge">SLOT ${slotNo}</span>
             <div class="team-name" id="displayName_${team.key}">${escapeHtml(team.name || "")}</div>
             <input id="editName_${team.key}" class="edit-name" style="display:none" />
           </div>
@@ -184,13 +194,13 @@
 
       teamsContainer.appendChild(card);
 
-      // wire events
+      // buttons
       document.getElementById(`kill_plus_${team.key}`).addEventListener("click", ()=> changeValue(team.key, 'kills', 1));
       document.getElementById(`kill_minus_${team.key}`).addEventListener("click", ()=> changeValue(team.key, 'kills', -1));
       document.getElementById(`alive_plus_${team.key}`).addEventListener("click", ()=> changeValue(team.key, 'alive', 1, 0, 4));
       document.getElementById(`alive_minus_${team.key}`).addEventListener("click", ()=> changeValue(team.key, 'alive', -1, 0, 4));
 
-      // manual input change (debounced by small timeout to avoid rapid writes)
+      // manual input change
       attachInputHandler(`kill_input_${team.key}`, value => {
         const v = Math.max(0, Number(value)||0);
         update(ref(db, `scrims/teams/${team.key}`), { kills: v });
@@ -201,7 +211,7 @@
         update(ref(db, `scrims/teams/${team.key}`), { alive: v });
       });
 
-      // edit name toggle
+      // edit name
       const editBtn = document.getElementById(`editBtn_${team.key}`);
       const delBtn = document.getElementById(`delBtn_${team.key}`);
       const nameDiv = document.getElementById(`displayName_${team.key}`);
